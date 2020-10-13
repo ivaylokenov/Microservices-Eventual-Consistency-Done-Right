@@ -37,7 +37,7 @@ Gold sponsors:
 
 Table of contents:
 
-- To Be Announced
+- To be announced
 
 If you'd like to support me and my projects, please consider:
 
