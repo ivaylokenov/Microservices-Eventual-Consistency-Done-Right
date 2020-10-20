@@ -1,0 +1,199 @@
+version: "3.8"
+
+services:
+
+    data:
+        container_name: sqlserver
+        image: mcr.microsoft.com/mssql/server:2019-latest
+        ports: 
+            - "1433:1433"
+        environment:
+            - ACCEPT_EULA=Y
+            - SA_PASSWORD=yourStrongPassword12!@
+        volumes: 
+            - sqldata:/var/opt/mssql 
+        networks: 
+            - carrentalsystem-network
+    
+    messages:
+        container_name: rabbitmq
+        image: rabbitmq:3-management
+        ports:
+            - "5672:5672"
+        hostname: "rabbitmq"
+        environment:
+            - RABBITMQ_DEFAULT_USER=rabbitmquser
+            - RABBITMQ_DEFAULT_PASS=rabbitmqPassword12!
+        volumes:
+            - rabbitmq:/var/lib/rabbitmq/mnesia
+        networks: 
+            - carrentalsystem-network
+
+    identity:
+        container_name: identity
+        image: ivaylokenov/carrentalsystem-identity-service:1.0
+        build:
+            context: ./Server
+            dockerfile: ./CarRentalSystem.Identity/Dockerfile
+        ports: 
+            - "5001:80"
+        env_file: Server/CarRentalSystem/Common.env
+        environment:
+            - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=CarRentalIdentityDatabase;User Id=sa; Password=yourStrongPassword12!@;MultipleActiveResultSets=true
+            - IdentitySettings__AdminPassword=adminpass12!
+        restart: on-failure
+        volumes:
+            - ./.aspnet/identity/DataProtection-Keys:/root/.aspnet/DataProtection-Keys
+        networks: 
+            - carrentalsystem-network
+        depends_on:
+            - data
+            
+    dealers:
+        container_name: dealers
+        image: ivaylokenov/carrentalsystem-dealers-service:1.0
+        build:
+            context: ./Server
+            dockerfile: ./CarRentalSystem.Dealers/Dockerfile
+        ports: 
+            - "5002:80"
+        env_file: 
+            - Server/CarRentalSystem/Common.env
+        environment:
+            - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=CarRentalDealersDatabase;User Id=sa; Password=yourStrongPassword12!@;MultipleActiveResultSets=true
+            - ConnectionStrings__CronJobsConnection=Server=sqlserver;Database=CarRentalDealersCronJobsDatabase;User Id=sa; Password=yourStrongPassword12!@;MultipleActiveResultSets=true
+            - MessageQueueSettings__Host=rabbitmq
+            - MessageQueueSettings__UserName=rabbitmquser
+            - MessageQueueSettings__Password=rabbitmqPassword12!
+        restart: on-failure
+        volumes:
+            - ./.aspnet/dealers/DataProtection-Keys:/root/.aspnet/DataProtection-Keys
+        networks: 
+            - carrentalsystem-network
+        depends_on:
+            - data
+            - messages
+            
+    statistics:
+        container_name: statistics
+        image: ivaylokenov/carrentalsystem-statistics-service:1.0
+        build:
+            context: ./Server
+            dockerfile: ./CarRentalSystem.Statistics/Dockerfile
+        ports: 
+            - "5003:80"
+        env_file: 
+            - Server/CarRentalSystem/Common.env
+        environment:
+            - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=CarRentalStatisticsDatabase;User Id=sa; Password=yourStrongPassword12!@;MultipleActiveResultSets=true
+            - ConnectionStrings__CronJobsConnection=Server=sqlserver;Database=CarRentalStatisticsCronJobsDatabase;User Id=sa; Password=yourStrongPassword12!@;MultipleActiveResultSets=true
+            - MessageQueueSettings__Host=rabbitmq
+            - MessageQueueSettings__UserName=rabbitmquser
+            - MessageQueueSettings__Password=rabbitmqPassword12!
+        restart: on-failure
+        volumes:
+            - ./.aspnet/statistics/DataProtection-Keys:/root/.aspnet/DataProtection-Keys
+        networks: 
+            - carrentalsystem-network
+        depends_on:
+            - data
+            - messages
+            
+    notifications:
+        container_name: notifications
+        image: ivaylokenov/carrentalsystem-notifications-service:1.0
+        build:
+            context: ./Server
+            dockerfile: ./CarRentalSystem.Notifications/Dockerfile
+        ports: 
+            - "5004:80"
+        env_file: 
+            - Server/CarRentalSystem/Common.env
+        environment:
+            - NotificationSettings__AllowedOrigins=http://localhost
+            - MessageQueueSettings__Host=rabbitmq
+            - MessageQueueSettings__UserName=rabbitmquser
+            - MessageQueueSettings__Password=rabbitmqPassword12!
+        restart: on-failure
+        volumes:
+            - ./.aspnet/notifications/DataProtection-Keys:/root/.aspnet/DataProtection-Keys
+        networks: 
+            - carrentalsystem-network
+        depends_on:
+            - messages
+
+    client:
+        container_name: client
+        image: ivaylokenov/carrentalsystem-user-client:1.0
+        build:
+            context: ./Client
+            dockerfile: ./Dockerfile
+            args:
+                configuration: development
+        ports: 
+            - "80:80"
+        restart: on-failure
+        depends_on:
+            - identity
+            - dealers
+            - statistics
+            - notifications
+            
+    admin:
+        container_name: admin
+        image: ivaylokenov/carrentalsystem-admin-client:1.0
+        build:
+            context: ./Server
+            dockerfile: ./CarRentalSystem.Admin/Dockerfile
+        ports: 
+            - "5000:80"
+        env_file: Server/CarRentalSystem/Common.env
+        environment:
+            - ServiceEndpoints__Identity=http://identity
+            - ServiceEndpoints__Dealers=http://dealers
+            - ServiceEndpoints__Statistics=http://statistics
+        restart: on-failure
+        volumes:
+            - ./.aspnet/admin/DataProtection-Keys:/root/.aspnet/DataProtection-Keys
+        networks: 
+            - carrentalsystem-network
+        depends_on:
+            - identity
+            - dealers
+            - statistics
+            
+    watchdog:
+        container_name: watchdog
+        image: ivaylokenov/carrentalsystem-watchdog-service:1.0
+        build:
+            context: ./Server
+            dockerfile: ./CarRentalSystem.Watchdog/Dockerfile
+        ports: 
+            - "5500:80"
+        environment:
+            - HealthChecks-UI__HealthChecks__0__Name=Identity
+            - HealthChecks-UI__HealthChecks__0__Uri=http://identity/health
+            - HealthChecks-UI__HealthChecks__1__Name=Dealers
+            - HealthChecks-UI__HealthChecks__1__Uri=http://dealers/health
+            - HealthChecks-UI__HealthChecks__2__Name=Statistics
+            - HealthChecks-UI__HealthChecks__2__Uri=http://statistics/health
+            - HealthChecks-UI__HealthChecks__3__Name=Notifications
+            - HealthChecks-UI__HealthChecks__3__Uri=http://notifications/health
+            - HealthChecks-UI__HealthChecks__4__Name=Admin
+            - HealthChecks-UI__HealthChecks__4__Uri=http://admin/health
+        restart: on-failure
+        networks: 
+            - carrentalsystem-network
+        depends_on:
+            - identity
+            - dealers
+            - statistics
+            - notifications
+            - admin
+
+networks:
+    carrentalsystem-network:
+
+volumes:
+    sqldata:
+    rabbitmq:
