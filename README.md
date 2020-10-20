@@ -37,7 +37,14 @@ Gold sponsors:
 
 Table of contents:
 
-- To be announced
+- About Code It Up
+- Microservice Communication Types
+- Consistency Between Services
+- Communication Between Services
+- Using A Message Broker
+- Partial Failures
+- Messages Resiliency
+- The Outbox Pattern
 
 If you'd like to support me and my projects, please consider:
 
