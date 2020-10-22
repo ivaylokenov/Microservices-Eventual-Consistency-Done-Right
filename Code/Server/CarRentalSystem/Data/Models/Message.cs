@@ -6,7 +6,7 @@
 
     public class Message
     {
-        public string serializedData;
+        private string serializedData;
 
         public Message(object data)
             => this.Data = data;
